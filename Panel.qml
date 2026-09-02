@@ -27,6 +27,39 @@ Panel {
   property var displays: []
   property int enabledDisplayCount: 0
 
+  // wl-gammarelay-rs state (global root path). Independent of the hardware
+  // backlight slider above.
+  property bool gammaAvailable: false
+  property int gammaBrightnessPercent: 100
+  property int temperatureValue: 6500
+  property real gammaValue: 1.0
+  property bool invertedValue: false
+  // Queued set-property command (args array) for the shared gammarelay writer.
+  property var gammaQueuedCommand: []
+
+  // View mode for the panel body: "main" shows the everyday controls
+  // (brightness, text size, scale, displays); "advanced" swaps in the
+  // wl-gammarelay-rs controls (brightness, temperature, gamma, invert).
+  property string viewMode: "main"
+
+  function toggleViewMode() {
+    root.viewMode = root.viewMode === "main" ? "advanced" : "main"
+    var sections = root.visibleSections
+    if (sections && sections.length > 0) {
+      root.focusSection = sections[0]
+      root.selectedIndex = root.sectionFirstIndex(root.focusSection)
+    }
+  }
+
+  // Virtual "header" section for the hero ADVANCED/BACK toggle, so it is
+  // reachable from the keyboard
+  readonly property bool headerHasCursor: cursorActive && focusSection === "header"
+  function setHeaderCursor() {
+    cursorActive = true
+    focusSection = "header"
+    selectedIndex = -1
+  }
+
   // Carry sub-notch touchpad deltas between wheel events.
   property real wheelAccumulator: 0
 
@@ -54,6 +87,10 @@ Panel {
   property int selectedIndex: 0
   property bool cursorActive: false
 
+  // Rotation/refresh glyph used by the inline "reset to default" buttons in
+  // the gammarelay section. Mirrors the "Refresh" icon Omarchy uses elsewhere.
+  readonly property string resetGlyph: "󰑐"
+
   // Text size slider — curated macOS-style notches (px). The panel snaps to
   // these stops; the CLI (omarchy-display-text-size) accepts any integer in range.
   readonly property var textSizeStops: [9, 10, 11, 12, 14, 16, 20]
@@ -74,6 +111,15 @@ Panel {
 
   readonly property var visibleSections: {
     var list = []
+    if (root.viewMode === "advanced") {
+      if (gammaAvailable) {
+        list.push("gammabrightness")
+        list.push("temperature")
+        list.push("gamma")
+        list.push("inverted")
+      }
+      return list
+    }
     if (brightnessAvailable) list.push("brightness")
     list.push("textsize")
     list.push("scale")
@@ -84,24 +130,45 @@ Panel {
   function sectionCount(section) {
     if (section === "brightness") return 0  // only the slider sentinel at -1
     if (section === "textsize") return 0    // slider sentinel at -1, like brightness
+    if (section === "gammabrightness" || section === "temperature"
+        || section === "gamma" || section === "inverted") return 0  // sentinel -1
     if (section === "scale") return scaleValues.length
     if (section === "monitors") return displays.length
     return 0
   }
 
   function sectionIsSingleRow(section) {
-    // brightness and text size are lone sliders; scale presets sit horizontally.
+    // brightness, text size and the gammarelay controls are lone sliders/toggles;
+    // scale presets sit horizontally.
     return section === "brightness" || section === "textsize" || section === "scale"
+        || section === "gammabrightness" || section === "temperature"
+        || section === "gamma" || section === "inverted"
+  }
+
+  // The gamma slider sections each expose a second cursor target — the ↺ reset
+  // button. Within these sections selectedIndex is -1 (slider) or 0 (reset).
+  function sectionHasReset(section) {
+    return section === "gammabrightness" || section === "temperature" || section === "gamma"
   }
 
   function sectionFirstIndex(section) {
-    if (section === "brightness" || section === "textsize") return -1
+    if (section === "brightness" || section === "textsize")
+      return -1
+    if (section === "gammabrightness" || section === "temperature"
+        || section === "gamma" || section === "inverted") return -1
     return 0
   }
 
   function moveCursor(delta) {
     var sections = visibleSections
     if (!sections || sections.length === 0) return
+    if (focusSection === "header") {
+      if (delta > 0) {
+        focusSection = sections[0]
+        selectedIndex = sectionFirstIndex(focusSection)
+      }
+      return
+    }
     var sIdx = sections.indexOf(focusSection)
     if (sIdx < 0) {
       focusSection = sections[0]
@@ -112,26 +179,34 @@ Panel {
     var max = inSingleRow ? 0 : sectionCount(focusSection) - 1
 
     if (delta > 0) {
+      // Gamma slider sections step slider (-1) → reset (0), then onward.
+      if (sectionHasReset(focusSection) && selectedIndex === -1) { selectedIndex = 0; return }
       if (!inSingleRow && selectedIndex < max) { selectedIndex = selectedIndex + 1; return }
       if (sIdx < sections.length - 1) {
         focusSection = sections[sIdx + 1]
         selectedIndex = sectionFirstIndex(focusSection)
       }
     } else {
+      // Gamma slider sections step reset (0) → slider (-1), then upward.
+      if (sectionHasReset(focusSection) && selectedIndex === 0) { selectedIndex = -1; return }
       if (!inSingleRow && selectedIndex > 0) { selectedIndex = selectedIndex - 1; return }
       if (sIdx > 0) {
         var prev = sections[sIdx - 1]
         focusSection = prev
         // Coming up from below — land on the last navigable row of the prev
-        // section, or its sentinel for single-row sections.
-        selectedIndex = sectionIsSingleRow(prev) ? sectionFirstIndex(prev) : sectionCount(prev) - 1
+        // section, its sentinel for single-row sections, or on the reset
+        // button when the section has one.
+        selectedIndex = sectionHasReset(prev) ? 0
+          : (sectionIsSingleRow(prev) ? sectionFirstIndex(prev) : sectionCount(prev) - 1)
+      } else {
+        // At the top-most section — escape up onto the hero ADVANCED button.
+        focusSection = "header"
       }
     }
   }
 
   // h/l: in scale section, walks the preset row; everywhere else, no-op
-  // because adjustBrightness handles horizontal motion on the brightness
-  // slider.
+  // because adjustBrightness / adjustGammarelay handle horizontal motion.
   function moveCursorH(delta) {
     if (focusSection !== "scale") return
     var next = selectedIndex + delta
@@ -146,7 +221,34 @@ Panel {
     setBrightness(root.brightnessPercent + delta)
   }
 
+  // h/l on a gammarelay section walks that control. Only active on the slider
+  // (selectedIndex === -1); when the ↺ reset button is focused h/l is a no-op.
+  function adjustGammarelay(delta) {
+    if (selectedIndex !== -1) return
+    if (focusSection === "gammabrightness") {
+      var nb = Math.max(1, Math.min(100, root.gammaBrightnessPercent + delta * 1))
+      root.gammaBrightnessPercent = nb
+      commitGammaBrightness(nb)
+    } else if (focusSection === "temperature") {
+      var nt = Math.max(1000, Math.min(10000, root.temperatureValue + delta * 50))
+      root.temperatureValue = nt
+      commitTemperature(nt)
+    } else if (focusSection === "gamma") {
+      var ng = Math.max(0.1, Math.min(3.0, root.gammaValue + delta * 0.05))
+      root.gammaValue = ng
+      commitGamma(ng)
+    }
+  }
+
   function activateCursor() {
+    if (focusSection === "header") { toggleViewMode(); return }
+    // Gamma reset buttons (selectedIndex === 0) restore their default value.
+    if (sectionHasReset(focusSection) && selectedIndex === 0) {
+      if (focusSection === "gammabrightness") resetGammaBrightness()
+      else if (focusSection === "temperature") resetTemperature()
+      else resetGamma()
+      return
+    }
     if (focusSection === "scale" && selectedIndex >= 0 && selectedIndex < scaleValues.length) {
       setScale(scaleValues[selectedIndex])
       return
@@ -155,22 +257,33 @@ Panel {
       var d = displays[selectedIndex]
       if (d) toggleDisplay(d.name, d.enabled)
     }
-    // brightness: no separate action; the slider value is the action.
+    if (focusSection === "inverted") toggleInverted()
+    // brightness / other gammarelay sliders: no separate action; the value is the action.
   }
 
   function clampCursor() {
     var sections = visibleSections
     if (!sections || !sections.length) return
+    if (focusSection === "header") return  // hero toggle stays hoverable
     if (sections.indexOf(focusSection) < 0) {
       focusSection = sections[0]
       selectedIndex = sectionFirstIndex(focusSection)
       return
     }
     var count = sectionCount(focusSection)
+    if (sectionHasReset(focusSection)) {
+      // Valid gamma states: -1 (slider) or 0 (reset). Anything else snaps to the slider.
+      if (selectedIndex !== -1 && selectedIndex !== 0) selectedIndex = -1
+      return
+    }
     if (sectionIsSingleRow(focusSection)) {
-      // brightness/text size use the -1 sentinel; scale clamps into the presets.
-      if (focusSection === "brightness" || focusSection === "textsize") selectedIndex = -1
-      else if (selectedIndex < 0 || selectedIndex >= count) selectedIndex = 0
+      // brightness / text size / gammarelay rows use the -1 sentinel; scale
+      // clamps into the presets.
+      if (focusSection === "scale") {
+        if (selectedIndex < 0 || selectedIndex >= count) selectedIndex = 0
+      } else {
+        selectedIndex = -1
+      }
       return
     }
     if (count === 0) {
@@ -231,6 +344,7 @@ Panel {
 
   function refresh() {
     if (!stateProc.running) stateProc.running = true
+    if (!gammaStateProc.running) gammaStateProc.running = true
   }
 
   function setBrightness(value) {
@@ -251,6 +365,53 @@ Panel {
   function previewBrightness(value) {
     root.brightnessPercent = Model.clampBrightness(value)
     brightnessDebounce.restart()
+  }
+
+  // ---- wl-gammarelay-rs write helpers (global root path `/`) ----
+  function queueGammaCommand(args) {
+    root.gammaQueuedCommand = args
+    if (!gammaActionProc.running) {
+      gammaActionProc.command = args
+      gammaActionProc.running = true
+    }
+  }
+
+  function commitGammaBrightness(percent) {
+    var frac = Math.max(0, Math.min(1, percent / 100))
+    queueGammaCommand(["busctl", "--user", "set-property", "rs.wl-gammarelay", "/", "rs.wl.gammarelay", "Brightness", "d", String(frac)])
+  }
+
+  function commitTemperature(kelvin) {
+    var k = Math.max(1000, Math.min(10000, Math.round(kelvin)))
+    queueGammaCommand(["busctl", "--user", "set-property", "rs.wl-gammarelay", "/", "rs.wl.gammarelay", "Temperature", "q", String(k)])
+  }
+
+  function commitGamma(value) {
+    var g = Math.max(0.1, Math.min(3.0, Number(value)))
+    queueGammaCommand(["busctl", "--user", "set-property", "rs.wl-gammarelay", "/", "rs.wl.gammarelay", "Gamma", "d", g.toFixed(2)])
+  }
+
+  function toggleInverted() {
+    root.invertedValue = !root.invertedValue
+    queueGammaCommand(["busctl", "--user", "set-property", "rs.wl-gammarelay", "/", "rs.wl.gammarelay", "Inverted", "b", root.invertedValue ? "true" : "false"])
+  }
+
+  // Inline "reset to default" actions for the gammarelay section. Defaults
+  // mirror wl-gammarelay-rs's Color::default(): 100% brightness, 6500K,
+  // gamma 1.0, no inversion.
+  function resetGammaBrightness() {
+    root.gammaBrightnessPercent = 100
+    commitGammaBrightness(100)
+  }
+
+  function resetTemperature() {
+    root.temperatureValue = 6500
+    commitTemperature(6500)
+  }
+
+  function resetGamma() {
+    root.gammaValue = 1.0
+    commitGamma(1.0)
   }
 
   function showBrightnessOsd(percent) {
@@ -357,6 +518,7 @@ Panel {
   onOpenedChanged: {
     if (opened) {
       refresh()
+      if (viewMode !== "main") viewMode = "main"
       if (brightnessAvailable) {
         focusSection = "brightness"
         selectedIndex = -1
@@ -372,6 +534,7 @@ Panel {
   onDisplaysChanged: clampCursor()
   onScaleValuesChanged: clampCursor()
   onVisibleSectionsChanged: clampCursor()
+  onViewModeChanged: if (opened) clampCursor()
 
   // Only poll while the panel is open; the bar glyph tracks monitor count via
   // Quickshell.screens, and open-time refresh + Component.onCompleted cover the
@@ -400,6 +563,50 @@ Panel {
         root.focusedMonitor = String(lines[5] || "").trim()
         root.monitorScale = root.normalizeScale(String(lines[6] || "").trim())
         root.updateDisplays(String(lines[7] || "[]").trim())
+      }
+    }
+  }
+
+  // Reads wl-gammarelay-rs global state (4 props, one per line) from the root
+  // object. If the service is down, busctl emits an error and no valid number
+  // lands on the first line — treat that as unavailable and hide the section.
+  Process {
+    id: gammaStateProc
+    command: ["bash", "-c",
+      "busctl --user get-property rs.wl-gammarelay / rs.wl.gammarelay Brightness | awk '{print $2}'; "
+      + "busctl --user get-property rs.wl-gammarelay / rs.wl.gammarelay Temperature | awk '{print $2}'; "
+      + "busctl --user get-property rs.wl-gammarelay / rs.wl.gammarelay Gamma | awk '{print $2}'; "
+      + "busctl --user get-property rs.wl-gammarelay / rs.wl.gammarelay Inverted | awk '{print $2}'"]
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        var lines = String(text || "").split("\n")
+        var brightness = parseFloat(String(lines[0] || "").trim())
+        if (!isFinite(brightness)) {
+          root.gammaAvailable = false
+          return
+        }
+        root.gammaAvailable = true
+        root.gammaBrightnessPercent = Math.max(1, Math.min(100, Math.round(brightness * 100)))
+        root.temperatureValue = Math.max(1000, Math.min(10000, parseInt(String(lines[1] || "").trim(), 10)))
+        root.gammaValue = Math.max(0.1, Math.min(3.0, parseFloat(String(lines[2] || "").trim())))
+        root.invertedValue = String(lines[3] || "").trim() === "true"
+      }
+    }
+  }
+
+  // Shares a single process for gammarelay writes; queued commands are
+  // dispatched on completion so rapid slider commits aren't dropped.
+  Process {
+    id: gammaActionProc
+    stdout: StdioCollector { waitForEnd: true }
+    onRunningChanged: {
+      if (running) return
+      if (root.gammaQueuedCommand.length > 0) {
+        var pending = root.gammaQueuedCommand
+        root.gammaQueuedCommand = []
+        gammaActionProc.command = pending
+        gammaActionProc.running = true
       }
     }
   }
@@ -501,6 +708,7 @@ Panel {
           if (root.focusSection === "brightness") root.adjustBrightness(dx * 5)
           else if (root.focusSection === "textsize") root.adjustTextSize(dx)
           else if (root.focusSection === "scale") root.moveCursorH(dx)
+          else root.adjustGammarelay(dx)
         }
       }
       onActivateRequested: if (root.cursorActive) root.activateCursor()
@@ -524,10 +732,10 @@ Panel {
           width: scrollArea.availableWidth
           spacing: Style.space(14)
 
-          // ---------- Hero: display icon · title/status ----------
+          // ---------- Hero: display icon · title/status · view toggle ----------
           Item {
             width: parent.width
-            implicitHeight: Math.max(heroIcon.implicitHeight, heroLabels.implicitHeight)
+            implicitHeight: Math.max(heroIcon.implicitHeight, Math.max(heroLabels.implicitHeight, viewToggle.implicitHeight))
 
             Text {
               id: heroIcon
@@ -543,7 +751,8 @@ Panel {
               id: heroLabels
               anchors.left: heroIcon.right
               anchors.leftMargin: Style.space(14)
-              anchors.right: parent.right
+              anchors.right: viewToggle.left
+              anchors.rightMargin: Style.space(8)
               anchors.verticalCenter: parent.verticalCenter
               spacing: Style.space(2)
 
@@ -560,6 +769,8 @@ Panel {
               Text {
                 id: heroLabel
                 text: {
+                  if (root.viewMode === "advanced")
+                    return "COLOR CONTROLS"
                   if (root.brightnessAvailable) {
                     return root.brightnessName(brightnessSlider.dragging ? brightnessSlider.liveValue : root.brightnessPercent).toUpperCase()
                   }
@@ -574,16 +785,33 @@ Panel {
                 width: parent.width
               }
             }
+
+            Button {
+              id: viewToggle
+              text: root.viewMode === "advanced" ? "BACK" : "ADVANCED"
+              tooltipText: root.viewMode === "advanced" ? "Back to display controls" : "Advanced color controls"
+              bordered: true
+              hasCursor: root.headerHasCursor
+              foreground: root.bar.foreground
+              fontFamily: root.bar.fontFamily
+              fontSize: Style.font.caption
+              horizontalPadding: Style.spacing.sm
+              verticalPadding: Style.spacing.controlPaddingY
+              anchors.right: parent.right
+              anchors.verticalCenter: parent.verticalCenter
+              onHovered: function(on) { if (on && root.opened) root.setHeaderCursor() }
+              onClicked: root.toggleViewMode()
+            }
           }
 
           // ---------- Brightness ----------
           PanelSeparator {
-            visible: root.brightnessAvailable
+            visible: root.brightnessAvailable && root.viewMode === "main"
             foreground: root.bar.foreground
           }
 
           Column {
-            visible: root.brightnessAvailable
+            visible: root.brightnessAvailable && root.viewMode === "main"
             width: parent.width
             spacing: Style.space(6)
 
@@ -650,12 +878,346 @@ Panel {
             }
           }
 
-          // ---------- Text size ----------
+          // ---------- wl-gammarelay-rs (brightness · temperature · gamma · invert) ----------
+          // ---- Gammarelay brightness ----
           PanelSeparator {
+            visible: root.gammaAvailable && root.viewMode === "advanced"
             foreground: root.bar.foreground
           }
 
           Column {
+            visible: root.gammaAvailable && root.viewMode === "advanced"
+            width: parent.width
+            spacing: Style.space(6)
+
+            Item {
+              width: parent.width
+              implicitHeight: Math.max(gammaBrightnessHeader.implicitHeight, gammaBrightnessPct.implicitHeight)
+
+              PanelSectionHeader {
+                id: gammaBrightnessHeader
+                text: "BRIGHTNESS"
+                foreground: root.bar.foreground
+                fontFamily: root.bar.fontFamily
+                anchors.left: parent.left
+                anchors.verticalCenter: parent.verticalCenter
+              }
+
+              Text {
+                id: gammaBrightnessPct
+                text: Math.round(gammaBrightnessSlider.dragging ? gammaBrightnessSlider.liveValue : root.gammaBrightnessPercent) + "%"
+                color: Qt.darker(root.bar.foreground, 1.4)
+                font.family: root.bar.fontFamily
+                font.pixelSize: Style.font.caption
+                font.bold: true
+                anchors.right: gammaBrightnessReset.left
+                anchors.rightMargin: Style.space(6)
+                anchors.verticalCenter: parent.verticalCenter
+              }
+
+              PanelActionButton {
+                id: gammaBrightnessReset
+                iconText: root.resetGlyph
+                tooltipText: "Reset brightness to 100%"
+                foreground: root.bar.foreground
+                fontFamily: root.bar.fontFamily
+                hasCursor: root.cursorActive && root.focusSection === "gammabrightness" && root.selectedIndex === 0
+                onHasCursorChanged: if (hasCursor) root.ensureCursorVisible(gammaBrightnessReset)
+                anchors.right: parent.right
+                anchors.rightMargin: Style.space(6)
+                anchors.verticalCenter: parent.verticalCenter
+                onHovered: function(on) { if (on && root.opened) { root.cursorActive = true; root.focusSection = "gammabrightness"; root.selectedIndex = 0 } }
+                onClicked: root.resetGammaBrightness()
+              }
+            }
+
+            CursorSurface {
+              id: gammaBrightnessRow
+              width: parent.width
+              height: gammaBrightnessSlider.implicitHeight + Style.spacing.controlGap
+              hasCursor: root.cursorActive && root.focusSection === "gammabrightness" && root.selectedIndex === -1
+              onHasCursorChanged: if (hasCursor) root.ensureCursorVisible(gammaBrightnessRow)
+              foreground: root.bar.foreground
+              outline: true
+
+              PanelSlider {
+                id: gammaBrightnessSlider
+                bar: root.bar
+                anchors.fill: parent
+                anchors.leftMargin: Style.space(6)
+                anchors.rightMargin: Style.space(6)
+                minimum: 1
+                maximum: 100
+                step: 1
+                integer: true
+                value: root.gammaBrightnessPercent
+                onMoved: function(v) { root.gammaBrightnessPercent = Math.round(v) }
+                onReleased: function(v) {
+                  root.gammaBrightnessPercent = Math.round(v)
+                  root.commitGammaBrightness(v)
+                }
+              }
+
+              HoverHandler {
+                onHoveredChanged: if (hovered && !root.reflowingText) {
+                  root.cursorActive = true
+                  root.focusSection = "gammabrightness"
+                  root.selectedIndex = -1
+                }
+              }
+            }
+          }
+
+          // ---- Temperature ----
+          PanelSeparator {
+            visible: root.gammaAvailable && root.viewMode === "advanced"
+            foreground: root.bar.foreground
+          }
+
+          Column {
+            visible: root.gammaAvailable && root.viewMode === "advanced"
+            width: parent.width
+            spacing: Style.space(6)
+            
+            Item {
+              width: parent.width
+              implicitHeight: Math.max(tempHeader.implicitHeight, tempValue.implicitHeight)
+
+              PanelSectionHeader {
+                id: tempHeader
+                text: "TEMPERATURE"
+                foreground: root.bar.foreground
+                fontFamily: root.bar.fontFamily
+                anchors.left: parent.left
+                anchors.verticalCenter: parent.verticalCenter
+              }
+
+              Text {
+                id: tempValue
+                text: (tempSlider.dragging ? Math.round(tempSlider.liveValue) : root.temperatureValue) + "K"
+                color: Qt.darker(root.bar.foreground, 1.4)
+                font.family: root.bar.fontFamily
+                font.pixelSize: Style.font.caption
+                font.bold: true
+                anchors.right: tempReset.left
+                anchors.rightMargin: Style.space(6)
+                anchors.verticalCenter: parent.verticalCenter
+              }
+
+              PanelActionButton {
+                id: tempReset
+                iconText: root.resetGlyph
+                tooltipText: "Reset temperature to 6500K"
+                foreground: root.bar.foreground
+                fontFamily: root.bar.fontFamily
+                hasCursor: root.cursorActive && root.focusSection === "temperature" && root.selectedIndex === 0
+                onHasCursorChanged: if (hasCursor) root.ensureCursorVisible(tempReset)
+                anchors.right: parent.right
+                anchors.rightMargin: Style.space(6)
+                anchors.verticalCenter: parent.verticalCenter
+                onHovered: function(on) { if (on && root.opened) { root.cursorActive = true; root.focusSection = "temperature"; root.selectedIndex = 0 } }
+                onClicked: root.resetTemperature()
+              }
+            }
+
+            CursorSurface {
+              id: tempRow
+              width: parent.width
+              height: tempSlider.implicitHeight + Style.spacing.controlGap
+              hasCursor: root.cursorActive && root.focusSection === "temperature" && root.selectedIndex === -1
+              onHasCursorChanged: if (hasCursor) root.ensureCursorVisible(tempRow)
+              foreground: root.bar.foreground
+              outline: true
+
+              PanelSlider {
+                id: tempSlider
+                bar: root.bar
+                anchors.fill: parent
+                anchors.leftMargin: Style.space(6)
+                anchors.rightMargin: Style.space(6)
+                minimum: 1000
+                maximum: 10000
+                step: 50
+                integer: true
+                value: root.temperatureValue
+                onMoved: function(v) { root.temperatureValue = Math.round(v) }
+                onReleased: function(v) {
+                  root.temperatureValue = Math.round(v)
+                  root.commitTemperature(v)
+                }
+              }
+
+              HoverHandler {
+                onHoveredChanged: if (hovered && !root.reflowingText) {
+                  root.cursorActive = true
+                  root.focusSection = "temperature"
+                  root.selectedIndex = -1
+                }
+              }
+            }
+          }
+
+          // ---- Gamma ----
+          PanelSeparator {
+            visible: root.gammaAvailable && root.viewMode === "advanced"
+            foreground: root.bar.foreground
+          }
+
+          Column {
+            visible: root.gammaAvailable && root.viewMode === "advanced"
+            width: parent.width
+            spacing: Style.space(6)
+
+            Item {
+              width: parent.width
+              implicitHeight: Math.max(gammaHeader.implicitHeight, gammaValueText.implicitHeight)
+
+              PanelSectionHeader {
+                id: gammaHeader
+                text: "GAMMA"
+                foreground: root.bar.foreground
+                fontFamily: root.bar.fontFamily
+                anchors.left: parent.left
+                anchors.verticalCenter: parent.verticalCenter
+              }
+
+              Text {
+                id: gammaValueText
+                text: (gammaSlider.dragging ? gammaSlider.liveValue : root.gammaValue).toFixed(2)
+                color: Qt.darker(root.bar.foreground, 1.4)
+                font.family: root.bar.fontFamily
+                font.pixelSize: Style.font.caption
+                font.bold: true
+                anchors.right: gammaReset.left
+                anchors.rightMargin: Style.space(6)
+                anchors.verticalCenter: parent.verticalCenter
+              }
+
+              PanelActionButton {
+                id: gammaReset
+                iconText: root.resetGlyph
+                tooltipText: "Reset gamma to 1.00"
+                foreground: root.bar.foreground
+                fontFamily: root.bar.fontFamily
+                hasCursor: root.cursorActive && root.focusSection === "gamma" && root.selectedIndex === 0
+                onHasCursorChanged: if (hasCursor) root.ensureCursorVisible(gammaReset)
+                anchors.right: parent.right
+                anchors.rightMargin: Style.space(6)
+                anchors.verticalCenter: parent.verticalCenter
+                onHovered: function(on) { if (on && root.opened) { root.cursorActive = true; root.focusSection = "gamma"; root.selectedIndex = 0 } }
+                onClicked: root.resetGamma()
+              }
+            }
+
+            CursorSurface {
+              id: gammaRow
+              width: parent.width
+              height: gammaSlider.implicitHeight + Style.spacing.controlGap
+              hasCursor: root.cursorActive && root.focusSection === "gamma" && root.selectedIndex === -1
+              onHasCursorChanged: if (hasCursor) root.ensureCursorVisible(gammaRow)
+              foreground: root.bar.foreground
+              outline: true
+
+              PanelSlider {
+                id: gammaSlider
+                bar: root.bar
+                anchors.fill: parent
+                anchors.leftMargin: Style.space(6)
+                anchors.rightMargin: Style.space(6)
+                minimum: 0.1
+                maximum: 3.0
+                step: 0.01
+                value: root.gammaValue
+                onMoved: function(v) { root.gammaValue = v }
+                onReleased: function(v) {
+                  root.gammaValue = v
+                  root.commitGamma(v)
+                }
+              }
+
+              HoverHandler {
+                onHoveredChanged: if (hovered && !root.reflowingText) {
+                  root.cursorActive = true
+                  root.focusSection = "gamma"
+                  root.selectedIndex = -1
+                }
+              }
+            }
+          }
+
+          // ---- Invert ----
+          PanelSeparator {
+            visible: root.gammaAvailable && root.viewMode === "advanced"
+            foreground: root.bar.foreground
+          }
+
+          Column {
+            visible: root.gammaAvailable && root.viewMode === "advanced"
+            width: parent.width
+            spacing: Style.space(6)
+
+            CursorSurface {
+              id: invertRow
+              width: parent.width
+              implicitHeight: invertRowInner.implicitHeight + Style.space(8)
+              hasCursor: root.cursorActive && root.focusSection === "inverted" && root.selectedIndex === -1
+              onHasCursorChanged: if (hasCursor) root.ensureCursorVisible(invertRow)
+              foreground: root.bar.foreground
+              outline: true
+
+              Row {
+                id: invertRowInner
+                anchors.verticalCenter: parent.verticalCenter
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.rightMargin: Style.space(6)
+                spacing: Style.space(8)
+
+                Text {
+                  id: invertLabel
+                  text: "INVERT COLORS"
+                  color: Qt.darker(root.bar.foreground, 1.4)
+                  font.family: root.bar.fontFamily
+                  font.pixelSize: Style.font.caption
+                  font.bold: true
+                  anchors.verticalCenter: parent.verticalCenter
+                  width: parent.width - invertSwitch.implicitWidth - parent.spacing
+                }
+
+                ToggleSwitch {
+                  id: invertSwitch
+                  checked: root.invertedValue
+                  interactive: false
+                  cursorRing: false
+                  foreground: root.bar.foreground
+                  accent: Color.accent
+                  anchors.verticalCenter: parent.verticalCenter
+                  onToggled: root.toggleInverted()
+                }
+              }
+
+              MouseArea {
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onContainsMouseChanged: if (containsMouse && !root.reflowingText) {
+                  root.cursorActive = true
+                  root.focusSection = "inverted"
+                  root.selectedIndex = -1
+                }
+                onClicked: root.toggleInverted()
+              }
+            }
+          }
+
+          // ---------- Text size ----------
+          PanelSeparator {
+            visible: root.viewMode === "main"
+            foreground: root.bar.foreground
+          }
+
+          Column {
+            visible: root.viewMode === "main"
             width: parent.width
             spacing: Style.space(6)
 
@@ -723,10 +1285,12 @@ Panel {
 
           // ---------- Scale ----------
           PanelSeparator {
+            visible: root.viewMode === "main"
             foreground: root.bar.foreground
           }
 
           Column {
+            visible: root.viewMode === "main"
             width: parent.width
             spacing: Style.space(10)
 
@@ -787,14 +1351,14 @@ Panel {
 
           // ---------- Monitors ----------
           PanelSeparator {
-            visible: root.displays.length > 1
+            visible: root.displays.length > 1 && root.viewMode === "main"
             foreground: root.bar.foreground
           }
 
           Column {
             width: parent.width
             spacing: Style.space(10)
-            visible: root.displays.length > 1
+            visible: root.displays.length > 1 && root.viewMode === "main"
 
             PanelSectionHeader {
               text: "DISPLAYS"
