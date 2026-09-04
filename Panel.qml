@@ -87,8 +87,6 @@ Panel {
   property int selectedIndex: 0
   property bool cursorActive: false
 
-  // Rotation/refresh glyph used by the inline "reset to default" buttons in
-  // the gammarelay section. Mirrors the "Refresh" icon Omarchy uses elsewhere.
   readonly property string resetGlyph: "󰑐"
 
   // Text size slider — curated macOS-style notches (px). The panel snaps to
@@ -145,15 +143,12 @@ Panel {
         || section === "gamma" || section === "inverted"
   }
 
-  // The gamma slider sections each expose a second cursor target — the ↺ reset
-  // button. Within these sections selectedIndex is -1 (slider) or 0 (reset).
   function sectionHasReset(section) {
     return section === "gammabrightness" || section === "temperature" || section === "gamma"
   }
 
   function sectionFirstIndex(section) {
-    if (section === "brightness" || section === "textsize")
-      return -1
+    if (section === "brightness" || section === "textsize") return -1
     if (section === "gammabrightness" || section === "temperature"
         || section === "gamma" || section === "inverted") return -1
     return 0
@@ -187,7 +182,6 @@ Panel {
         selectedIndex = sectionFirstIndex(focusSection)
       }
     } else {
-      // Gamma slider sections step reset (0) → slider (-1), then upward.
       if (sectionHasReset(focusSection) && selectedIndex === 0) { selectedIndex = -1; return }
       if (!inSingleRow && selectedIndex > 0) { selectedIndex = selectedIndex - 1; return }
       if (sIdx > 0) {
@@ -206,7 +200,8 @@ Panel {
   }
 
   // h/l: in scale section, walks the preset row; everywhere else, no-op
-  // because adjustBrightness / adjustGammarelay handle horizontal motion.
+  // because adjustBrightness handles horizontal motion on the brightness
+  // slider.
   function moveCursorH(delta) {
     if (focusSection !== "scale") return
     var next = selectedIndex + delta
@@ -222,7 +217,7 @@ Panel {
   }
 
   // h/l on a gammarelay section walks that control. Only active on the slider
-  // (selectedIndex === -1); when the ↺ reset button is focused h/l is a no-op.
+  // (selectedIndex === -1); when the reset button is focused h/l is a no-op.
   function adjustGammarelay(delta) {
     if (selectedIndex !== -1) return
     if (focusSection === "gammabrightness") {
