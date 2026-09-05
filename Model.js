@@ -10,6 +10,24 @@ function normalizeScale(scale) {
   return String(Math.round(n * 100) / 100)
 }
 
+function clampGammaBrightness(value) {
+    var n = Number(value)
+    if (!isFinite(n)) return 100
+    return Math.max(1, Math.min(100, Math.round(n * 100)))
+}
+
+function parseTemperature(value) {
+    var n = parseInt(String(value || "").trim(), 10)
+    if (!isFinite(n)) return 6500
+    return Math.max(1000, Math.min(10000, n))
+}
+
+function parseGamma(value) {
+    var n = parseFloat(String(value || "").trim())
+    if (!isFinite(n)) return 1.0
+    return Math.max(0.1, Math.min(3.0, n))
+}
+
 function gcd(a, b) {
   while (b) {
     var remainder = a % b
@@ -114,6 +132,9 @@ function parseDisplays(raw) {
 if (typeof module !== "undefined") {
   module.exports = {
     clampBrightness: clampBrightness,
+    clampGammaBrightness: clampGammaBrightness,
+    parseTemperature: parseTemperature,
+    parseGamma: parseGamma,
     normalizeScale: normalizeScale,
     cleanScale: cleanScale,
     matchingScaleIndex: matchingScaleIndex,

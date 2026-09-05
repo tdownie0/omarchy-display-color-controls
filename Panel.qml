@@ -221,7 +221,7 @@ Panel {
   function adjustGammarelay(delta) {
     if (selectedIndex !== -1) return
     if (focusSection === "gammabrightness") {
-      var nb = Math.max(1, Math.min(100, root.gammaBrightnessPercent + delta * 1))
+      var nb = Math.max(1, Math.min(100, root.gammaBrightnessPercent + delta * 5))
       root.gammaBrightnessPercent = nb
       commitGammaBrightness(nb)
     } else if (focusSection === "temperature") {
@@ -582,9 +582,9 @@ Panel {
           return
         }
         root.gammaAvailable = true
-        root.gammaBrightnessPercent = Math.max(1, Math.min(100, Math.round(brightness * 100)))
-        root.temperatureValue = Math.max(1000, Math.min(10000, parseInt(String(lines[1] || "").trim(), 10)))
-        root.gammaValue = Math.max(0.1, Math.min(3.0, parseFloat(String(lines[2] || "").trim())))
+        root.gammaBrightnessPercent = Model.clampGammaBrightness(brightness)
+        root.temperatureValue       = Model.parseTemperature(lines[1])
+        root.gammaValue             = Model.parseGamma(lines[2])
         root.invertedValue = String(lines[3] || "").trim() === "true"
       }
     }
