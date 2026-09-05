@@ -4,9 +4,7 @@ A drop-in replacement for the built-in `omarchy.monitor` Display widget that
 keeps all of its familiar controls and adds an **Advanced color controls**
 view backed by [`wl-gammarelay-rs`](https://github.com/MaxVerevkin/wl-gammarelay-rs).
 
-Based on the Omarchy `omarchy.monitor` plugin (MIT). It registers the same
-`omarchy.monitor` IPC name, so the bar glyph, OSD, and keyboard shortcuts
-behave exactly as before.
+Based on the Omarchy `omarchy.monitor` plugin.
 
 ## Features
 
@@ -36,23 +34,30 @@ service is not reachable — the panel degrades to the plain display controls.
 
 ## Installation
 
-### 1. Install `wl-gammarelay-rs`
+### 1. Add and enable the plugin
 
-`wl-gammarelay-rs` is only in the AUR, so install it with the Omarchy package
-helper (which wraps `yay`):
+```bash
+omarchy plugin add https://github.com/tdownie0/omarchy-display-color-controls.git --enable
+```
+
+### 2. Install `wl-gammarelay-rs`
+
+At this point, the plugin will be enabled, but the `Advanced` button will lead to an
+empty menu. `wl-gammarelay-rs` is only in the AUR, so install it with the Omarchy
+package helper (which wraps `yay`):
 
 ```bash
 omarchy pkg aur add wl-gammarelay-rs
 ```
 
-### 2. Install the bundled user service
+### 3. Install the bundled user service
 
 The AUR package ships no systemd unit, so this plugin provides one. It follows
 the same pattern Omarchy itself uses for daemons such as `hyprsunset.service`
 (graphical-session scoped, auto-restart, `WAYLAND_DISPLAY`-guarded): 
 
 ```bash
-install -Dm644 wl-gammarelay.service ~/.config/systemd/user/
+install -Dm644 ~/.config/omarchy/plugins/io.github.tdownie0.monitor/wl-gammarelay.service ~/.config/systemd/user/
 systemctl --user daemon-reload
 systemctl --user enable --now wl-gammarelay.service
 ```
@@ -63,27 +68,21 @@ Verify it is up:
 systemctl --user status wl-gammarelay.service
 ```
 
-### 3. Add and enable the plugin
-
-```bash
-omarchy plugin add <GITHUB-REPO-URL> --enable
-omarchy plugin enable io.github.tdownie0.monitor --section right
-```
-
-> **TODO before publishing:** replace `<GITHUB-REPO-URL>` with the public
-> repository URL.
-
 ### 4. Replace the built-in Display widget
 
-This plugin is a superset of the stock `omarchy.monitor` widget and registers
-the same D-Bus IPC name, so only one can run at a time. Disable the built-in:
+Disable the built-in:
 
 ```bash
 omarchy plugin disable omarchy.monitor
 ```
 
-The bar icon is the standard display glyph; use the same shortcut as before
-to summon the panel.
+The bar icon is the standard display glyph; To use the same
+keybinding as before, `~/.config/hypr/bindings.lua` can be updated like so:
+
+```lua
+hl.unbind("SUPER + CTRL + D")
+o.bind("SUPER + CTRL + D", "Display", "omarchy-shell shell toggle io.github.tdownie0.monitor")
+```
 
 ## Usage
 
@@ -117,7 +116,7 @@ omarchy plugin enable omarchy.monitor --section right
 
 | Dependency | Where from | Purpose |
 |------------|------------|---------|
-| `omarchy.monitor` plugin | Omarchy (base) | Parent panel, IPC contract, model logic |
+| `omarchy.monitor` plugin | Omarchy (base) | Parent panel, model logic |
 | `omarchy-brightness-display`, `omarchy-monitor-state`, `omarchy-hyprland-monitor-scaling`, `omarchy-display-text-size` | Omarchy (base) | CLI backends driven by the panel |
 | `wl-gammarelay-rs` | AUR | D-Bus color/gamma service (`rs.wl-gammarelay`) |
 | `busctl` | systemd | D-Bus reads/writes to `rs.wl.gammarelay` |

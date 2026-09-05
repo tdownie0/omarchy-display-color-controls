@@ -8,8 +8,8 @@ import "Model.js" as Model
 
 Panel {
   id: root
-  moduleName: "omarchy.monitor"
-  ipcTarget: "omarchy.monitor"
+  moduleName: "io.github.tdownie0.monitor"
+  ipcTarget: "io.github.tdownie0.monitor"
   manageIpc: false
 
   // manageIpc: false so this panel can own the single IpcHandler the target
@@ -326,7 +326,7 @@ Panel {
   }
 
   IpcHandler {
-    target: "omarchy.monitor"
+    target: "io.github.tdownie0.monitor"
 
     function brightness(percent: string): string { return root.brightnessIpc(percent) }
     function state(): string { return root.stateIpc() }

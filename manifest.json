@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "id": "io.github.tdownie0.monitor",
-  "name": "My Display",
+  "name": "Display and Color Controls",
   "version": "1.0.0",
   "author": "tdownie0",
   "license": "MIT",
@@ -13,9 +13,10 @@
     "barWidget": "Panel.qml"
   },
   "barWidget": {
-    "displayName": "My Display",
+    "displayName": "Display & Color Controls",
     "description": "Brightness, scale and display controls, plus advanced color controls (temperature, gamma, inversion) via wl-gammarelay.",
     "category": "System",
-    "allowMultiple": false
+    "allowMultiple": false,
+    "defaultSection": "right"
   }
 }
