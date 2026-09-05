@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
-  "id": "rts.monitor",
+  "id": "tdownie0.omamonitor",
   "name": "My Display",
   "version": "1.0.0",
-  "author": "Omarchy",
-  "description": "Brightness slider and laptop display controls",
+  "author": "tdownie0",
+  "description": "Brightness slider and laptop display controls. Additionally, color brightness, temperature, gamma, inversion and controls.",
   "kinds": [
     "bar-widget"
   ],
@@ -13,7 +13,7 @@
   },
   "barWidget": {
     "displayName": "My Display",
-    "description": "Brightness slider and laptop display controls",
+    "description": "Brightness slider and laptop display controls. Additionally, color brightness, temperature, gamma, inversion and controls.",
     "category": "System",
     "allowMultiple": false
   },
