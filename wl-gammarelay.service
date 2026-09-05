@@ -1,7 +1,9 @@
 [Unit]
 Description=DBus interface to control display brightness under Wayland
+Documentation=https://github.com/MaxVerevkin/wl-gammarelay-rs
 PartOf=graphical-session.target
 After=graphical-session.target
+ConditionEnvironment=WAYLAND_DISPLAY
 
 [Service]
 Type=dbus
@@ -9,6 +11,7 @@ BusName=rs.wl-gammarelay
 ExecStart=/usr/bin/wl-gammarelay-rs
 Restart=on-failure
 RestartSec=1s
+Slice=session.slice
 RestrictAddressFamilies=AF_UNIX
 IPAddressDeny=any
 

@@ -1,10 +1,11 @@
 {
   "schemaVersion": 1,
-  "id": "tdownie0.omamonitor",
+  "id": "io.github.tdownie0.monitor",
   "name": "My Display",
   "version": "1.0.0",
   "author": "tdownie0",
-  "description": "Brightness slider and laptop display controls. Additionally, color brightness, temperature, gamma, inversion and controls.",
+  "license": "MIT",
+  "description": "Display brightness, scale and laptop controls, plus advanced color controls (brightness, temperature, gamma, inversion) via wl-gammarelay.",
   "kinds": [
     "bar-widget"
   ],
@@ -13,11 +14,8 @@
   },
   "barWidget": {
     "displayName": "My Display",
-    "description": "Brightness slider and laptop display controls. Additionally, color brightness, temperature, gamma, inversion and controls.",
+    "description": "Brightness, scale and display controls, plus advanced color controls (temperature, gamma, inversion) via wl-gammarelay.",
     "category": "System",
     "allowMultiple": false
-  },
-  "omarchy": {
-    "clonedFrom": "omarchy.monitor"
   }
 }
