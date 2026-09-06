@@ -6,6 +6,14 @@ view backed by [`wl-gammarelay-rs`](https://github.com/MaxVerevkin/wl-gammarelay
 
 Based on the Omarchy `omarchy.monitor` plugin.
 
+<p align="center">
+  <a href="https://github.com/tdownie0/omarchy-display-color-controls/tags"><img alt="Latest tag" src="https://img.shields.io/github/v/tag/tdownie0/omarchy-display-color-controls?label=version"></a>
+</p>
+
+<p align="center">
+  <img src="preview.png" alt="Display and Color Controls" width="420">
+</p>
+
 ## Features
 
 - **Display panel** — the full `omarchy.monitor` experience:
