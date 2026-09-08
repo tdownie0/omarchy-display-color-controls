@@ -55,7 +55,7 @@ empty menu. `wl-gammarelay-rs` is only in the AUR, so install it with the Omarch
 package helper (which wraps `yay`):
 
 ```bash
-omarchy pkg aur add wl-gammarelay-rs
+omarchy pkg aur add wl-gammarelay-rs=1.0.1
 ```
 
 ### 3. Install the bundled user service

@@ -8,12 +8,13 @@ ConditionEnvironment=WAYLAND_DISPLAY
 [Service]
 Type=dbus
 BusName=rs.wl-gammarelay
+Environment=EXPECTED_SHA="25d6db60581beb8de0d5efe19b293d29e9129f110f29b7be4b601d2b8f66f51d"
+ExecStartPre=/bin/sh -c 'echo "$EXPECTED_SHA /usr/bin/wl-gammarelay-rs" | sha256sum -c -'
 ExecStart=/usr/bin/wl-gammarelay-rs
 Restart=on-failure
 RestartSec=1s
 Slice=session.slice
 RestrictAddressFamilies=AF_UNIX
-IPAddressDeny=any
 
 [Install]
 WantedBy=graphical-session.target
